@@ -2,217 +2,533 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  <title>ISBNバーコード読み取りテスト</title>
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
+  <title>書籍バーコード記録</title>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: sans-serif;
-      max-width: 600px;
-      margin: 0 auto;
+      background: #f5f5f5;
+      color: #333;
+      margin: 0;
+      padding: 16px;
+    }
+
+    main {
+      max-width: 560px;
+      margin: auto;
+      background: white;
       padding: 20px;
-      line-height: 1.6;
+      border-radius: 14px;
+      box-shadow: 0 2px 8px #0001;
     }
 
     h1 {
-      font-size: 24px;
+      font-size: 23px;
+      margin-top: 0;
     }
 
-    button {
-      width: 100%;
-      padding: 14px;
-      margin: 8px 0;
-      font-size: 16px;
+    h2 {
+      font-size: 18px;
+      margin-top: 26px;
     }
 
-    #reader {
-      width: 100%;
+    label {
+      display: block;
+      font-weight: bold;
       margin-top: 16px;
     }
 
-    #status {
-      padding: 12px;
-      background: #f0f3f8;
-      overflow-wrap: anywhere;
-      white-space: pre-wrap;
+    input,
+    textarea,
+    button {
+      width: 100%;
+      font-size: 16px;
+      border-radius: 8px;
     }
 
-    #result {
-      font-size: 20px;
+    input,
+    textarea {
+      padding: 12px;
+      margin-top: 6px;
+      border: 1px solid #ccc;
+      background: white;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    button {
+      border: none;
+      padding: 14px;
+      margin-top: 12px;
+      background: #287c61;
+      color: white;
       font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: #aaa;
+      cursor: wait;
+    }
+
+    .secondary {
+      background: #666;
+    }
+
+    .notice {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #f0f0f0;
+      white-space: pre-wrap;
       overflow-wrap: anywhere;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .hint {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.6;
     }
   </style>
 </head>
 
 <body>
-  <h1>ISBNバーコード読み取りテスト</h1>
+<main>
+  <h1>📚 書籍バーコード記録</h1>
 
-  <p>
-    本の裏表紙にあるISBNバーコードをカメラで読み取ります。
+  <p class="hint">
+    本のISBNを読み取り、書籍情報とメモを
+    Googleスプレッドシートに登録します。
   </p>
 
-  <button id="startButton">カメラを起動</button>
-  <button id="stopButton" disabled>カメラを停止</button>
+  <h2>1. ISBNを読み取る</h2>
 
   <div id="reader"></div>
 
-  <h2>読み取り結果</h2>
-  <div id="result">まだ読み取っていません。</div>
+  <button id="restartButton"
+          class="secondary hidden"
+          type="button">
+    カメラを再起動
+  </button>
 
-  <h2>ステータス</h2>
-  <div id="status">ページを読み込んでいます……</div>
+  <label for="isbn">ISBN-13</label>
+  <input id="isbn"
+         type="text"
+         inputmode="numeric"
+         placeholder="978XXXXXXXXXX">
 
-  <script>
-    const statusElement = document.getElementById("status");
-    const resultElement = document.getElementById("result");
-    const startButton = document.getElementById("startButton");
-    const stopButton = document.getElementById("stopButton");
+  <button id="lookupButton" type="button">
+    ISBNから書籍情報を取得
+  </button>
 
-    let scanner = null;
-    let isScanning = false;
-    let isCompleted = false;
+  <h2>2. 書籍情報を確認する</h2>
 
-    function setStatus(message) {
-      statusElement.textContent = message;
-    }
+  <p class="hint">
+    取得できなかった項目は手入力できます。
+  </p>
 
-    function isValidISBN13(isbn) {
-      if (!/^(978|979)\d{10}$/.test(isbn)) {
-        return false;
-      }
+  <label for="title">書名</label>
+  <input id="title" type="text">
 
-      let sum = 0;
+  <label for="author">著者</label>
+  <input id="author" type="text">
 
-      for (let i = 0; i < 12; i++) {
-        sum += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
-      }
+  <label for="publisher">出版社</label>
+  <input id="publisher" type="text">
 
-      return (10 - sum % 10) % 10 === Number(isbn[12]);
-    }
+  <label for="price">本体定価（円）</label>
+  <input id="price"
+         type="number"
+         min="0"
+         step="1"
+         inputmode="numeric"
+         placeholder="例：1000">
 
-    async function startScanner() {
-      if (isScanning) return;
+  <label for="taxIncluded">税込定価（円）</label>
+  <input id="taxIncluded"
+         type="number"
+         min="0"
+         step="1"
+         inputmode="numeric"
+         placeholder="例：1100">
 
-      if (typeof Html5Qrcode === "undefined") {
-        setStatus(
-          "ライブラリを読み込めません。\n" +
-          "通信環境やCDNへのアクセスを確認してください。"
-        );
-        return;
-      }
+  <label for="memo">メモ</label>
+  <textarea id="memo"
+            placeholder="感想、購入場所、分類など"></textarea>
 
-      scanner = new Html5Qrcode("reader", {
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13
-        ],
-        verbose: false
+  <button id="saveButton" type="button">
+    スプレッドシートに保存
+  </button>
+
+  <button id="clearButton"
+          class="secondary"
+          type="button">
+    入力内容をクリア
+  </button>
+
+  <div id="status"
+       class="notice"
+       role="status"
+       aria-live="polite">
+    ISBNを読み取ってください。
+  </div>
+</main>
+
+<script>
+  // ======================================
+  // 設定：自分のGASウェブアプリURLに変更する
+  // ======================================
+
+  const GAS_URL =
+    'https://script.google.com/macros/s/AKfycbzgysCxQBsEfwYnOOG4QIdmffWuvVhrCkQ310gzEnlBr-DOKGvqHX18zWz9hG0KsrB_wA/exec';
+
+  // ======================================
+  // 画面操作
+  // ======================================
+
+  const $ = id => document.getElementById(id);
+
+  const fields = [
+    'isbn',
+    'title',
+    'author',
+    'publisher',
+    'price',
+    'taxIncluded',
+    'memo'
+  ];
+
+  let scanner = null;
+  let scanning = false;
+  let busy = false;
+
+  function setStatus(message) {
+    $('status').textContent = message;
+  }
+
+  function normalizeIsbn(value) {
+    return String(value || '')
+      .replace(/[-\s]/g, '');
+  }
+
+  function isValidIsbn(value) {
+    return /^(978|979)\d{10}$/.test(value);
+  }
+
+  function setBusy(value) {
+    busy = value;
+
+    $('lookupButton').disabled = value;
+    $('saveButton').disabled = value;
+  }
+
+  // ======================================
+  // GASとの通信（JSONP）
+  // ======================================
+
+  function callGas(params) {
+    return new Promise((resolve, reject) => {
+      const callbackName =
+        'gasCallback_' +
+        Date.now() +
+        '_' +
+        Math.random().toString(36).slice(2);
+
+      const script = document.createElement('script');
+      const query = new URLSearchParams({
+        ...params,
+        callback: callbackName
       });
 
-      isCompleted = false;
-      startButton.disabled = true;
-      stopButton.disabled = false;
+      let finished = false;
 
-      setStatus("カメラを起動しています……");
-
-      try {
-        await scanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 10,
-            qrbox: {
-              width: 280,
-              height: 120
-            },
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.EAN_13
-            ]
-          },
-          async function (decodedText) {
-            if (isCompleted) return;
-
-            const isbn = String(decodedText).trim();
-
-            if (!isValidISBN13(isbn)) return;
-
-            isCompleted = true;
-
-            resultElement.textContent = isbn;
-
-            setStatus("ISBNを読み取りました！");
-            await stopScanner();
-          },
-          function () {
-            // 読み取り中のエラーは無視する
-          }
+      const timeout = setTimeout(() => {
+        finish();
+        reject(
+          new Error(
+            'GASから応答がありません。通信環境やデプロイ設定を確認してください。'
+          )
         );
+      }, 20000);
 
-        isScanning = true;
+      function finish() {
+        if (finished) return;
 
+        finished = true;
+        clearTimeout(timeout);
+
+        delete window[callbackName];
+
+        script.remove();
+      }
+
+      window[callbackName] = result => {
+        finish();
+        resolve(result);
+      };
+
+      script.onerror = () => {
+        finish();
+        reject(
+          new Error(
+            'GASへの接続に失敗しました。URLと公開設定を確認してください。'
+          )
+        );
+      };
+
+      script.src = GAS_URL + '?' + query.toString();
+
+      document.body.appendChild(script);
+    });
+  }
+
+  // ======================================
+  // ISBN検索
+  // ======================================
+
+  async function lookupBook() {
+    if (busy) return;
+
+    const isbn = normalizeIsbn($('isbn').value);
+    $('isbn').value = isbn;
+
+    if (!isValidIsbn(isbn)) {
+      setStatus('ISBN-13を確認してください。');
+      return;
+    }
+
+    setBusy(true);
+    setStatus('書籍情報を検索しています……');
+
+    try {
+      const result = await callGas({
+        action: 'lookup',
+        isbn: isbn
+      });
+
+      if (!result || !result.success) {
+        throw new Error(
+          result?.message || '書籍情報を取得できませんでした。'
+        );
+      }
+
+      const book = result.book || {};
+
+      $('title').value = book.title || '';
+      $('author').value = book.author || '';
+      $('publisher').value = book.publisher || '';
+
+      if (book.found) {
         setStatus(
-          "カメラを起動しました。\n" +
-          "本のISBNバーコードを映してください。"
+          '書籍情報を取得しました。\n' +
+          '内容を確認し、価格やメモを入力してください。'
         );
-
-      } catch (error) {
-        console.error(error);
-
-        scanner = null;
-        isScanning = false;
-
-        startButton.disabled = false;
-        stopButton.disabled = true;
-
+      } else {
         setStatus(
-          "カメラを起動できませんでした。\n" +
-          String(error)
+          '書籍情報が見つかりませんでした。\n' +
+          '書名・著者・出版社を手入力して登録できます。'
         );
+      }
+    } catch (error) {
+      setStatus('検索エラー：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  $('lookupButton').addEventListener('click', lookupBook);
+
+  // ======================================
+  // スプレッドシートへの保存
+  // ======================================
+
+  async function saveBook() {
+    if (busy) return;
+
+    const isbn = normalizeIsbn($('isbn').value);
+    $('isbn').value = isbn;
+
+    if (!isValidIsbn(isbn)) {
+      setStatus('正しいISBN-13を入力してください。');
+      return;
+    }
+
+    const price = $('price').value.trim();
+    const taxIncluded = $('taxIncluded').value.trim();
+
+    for (const [value, label] of [
+      [price, '本体定価'],
+      [taxIncluded, '税込定価']
+    ]) {
+      if (
+        value !== '' &&
+        (!/^\d+$/.test(value) ||
+         !Number.isSafeInteger(Number(value)))
+      ) {
+        setStatus(label + 'は0以上の整数で入力してください。');
+        return;
       }
     }
 
-    async function stopScanner() {
-      if (!scanner) return;
+    const book = {
+      action: 'save',
+      isbn: isbn,
+      title: $('title').value,
+      author: $('author').value,
+      publisher: $('publisher').value,
+      price: price,
+      taxIncluded: taxIncluded,
+      memo: $('memo').value
+    };
 
-      const currentScanner = scanner;
+    if (!confirm(
+      'この内容をスプレッドシートに登録しますか？\n\n' +
+      'ISBN：' + isbn + '\n' +
+      '書名：' + book.title
+    )) {
+      return;
+    }
 
-      try {
-        if (isScanning || currentScanner.isScanning) {
-          await currentScanner.stop();
-        }
-      } catch (error) {
-        console.warn(error);
+    setBusy(true);
+    setStatus('スプレッドシートに登録しています……');
+
+    try {
+      const result = await callGas(book);
+
+      if (!result || !result.success) {
+        throw new Error(
+          result?.message || '登録に失敗しました。'
+        );
       }
 
+      setStatus('✅ ' + result.message);
+    } catch (error) {
+      setStatus(
+        '登録結果を確認できませんでした。\n' +
+        error.message +
+        '\n\n重複登録を防ぐため、スプレッドシートに' +
+        '行が追加されていないか確認してから再試行してください。'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  $('saveButton').addEventListener('click', saveBook);
+
+  // ======================================
+  // 入力内容のクリア
+  // ======================================
+
+  $('clearButton').addEventListener('click', () => {
+    if (busy) return;
+
+    for (const id of fields) {
+      $(id).value = '';
+    }
+
+    setStatus('入力内容をクリアしました。');
+  });
+
+  // ======================================
+  // カメラとバーコード読み取り
+  // ======================================
+
+  async function startScanner() {
+    $('restartButton').classList.add('hidden');
+
+    if (scanner) {
       try {
-        currentScanner.clear();
+        if (scanning) {
+          await scanner.clear();
+        }
       } catch (error) {
-        console.warn(error);
+        console.log(error);
       }
 
       scanner = null;
-      isScanning = false;
-
-      startButton.disabled = false;
-      stopButton.disabled = true;
+      scanning = false;
     }
 
-    startButton.addEventListener("click", startScanner);
-    stopButton.addEventListener("click", stopScanner);
+    scanner = new Html5QrcodeScanner(
+      'reader',
+      {
+        fps: 10,
+        qrbox: {
+          width: 280,
+          height: 160
+        },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13
+        ],
+        rememberLastUsedCamera: true
+      },
+      false
+    );
 
-    if (typeof Html5Qrcode === "undefined") {
-      setStatus(
-        "ページは起動しましたが、ライブラリを読み込めません。\n" +
-        "CDNへの接続を確認してください。"
-      );
-    } else {
-      setStatus(
-        "準備完了。\n" +
-        "「カメラを起動」を押してください。"
-      );
-    }
-  </script>
+    scanner.render(
+      async decodedText => {
+        if (busy || !scanning) return;
+
+        const isbn = normalizeIsbn(decodedText);
+
+        if (!isValidIsbn(isbn)) {
+          setStatus(
+            'ISBN-13として読み取れませんでした。\n' +
+            'バーコードを枠内に合わせてください。'
+          );
+          return;
+        }
+
+        $('isbn').value = isbn;
+        scanning = false;
+
+        setStatus('ISBNを読み取りました：' + isbn);
+
+        try {
+          await scanner.clear();
+        } catch (error) {
+          console.log(error);
+        }
+
+        $('restartButton').classList.remove('hidden');
+
+        await lookupBook();
+      },
+      () => {
+        // 読み取り途中のエラーは画面に表示しない
+      }
+    );
+
+    scanning = true;
+  }
+
+  $('restartButton').addEventListener('click', startScanner);
+
+  // 起動
+  if (typeof Html5QrcodeScanner === 'undefined') {
+    setStatus(
+      'バーコード読み取りライブラリを読み込めませんでした。' +
+      '通信環境を確認してください。'
+    );
+  } else {
+    startScanner();
+  }
+</script>
 </body>
 </html>
