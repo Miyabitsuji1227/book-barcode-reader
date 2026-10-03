@@ -164,7 +164,7 @@
             placeholder="感想、購入場所、分類など"></textarea>
 
   <button id="saveButton" type="button">
-    スプレッドシートに保存
+    登録して次の本へ
   </button>
 
   <button id="clearButton"
@@ -408,7 +408,16 @@
         );
       }
 
-      setStatus('✅ ' + result.message);
+      // 保存成功後、入力欄を空にして次の本を読み取れる状態にする
+      for (const id of fields) {
+        $(id).value = '';
+      }
+
+      setStatus('✅ ' + result.message + '\n次の本をスキャンできます。');
+
+      // カメラを再起動して連続登録へ
+      $('restartButton').classList.add('hidden');
+      await startScanner();
     } catch (error) {
       setStatus(
         '登録結果を確認できませんでした。\n' +
