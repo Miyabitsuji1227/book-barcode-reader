@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>ISBNバーコード読み取りテスト</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    h1 {
+      font-size: 24px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin: 8px 0;
+      font-size: 16px;
+    }
+
+    #reader {
+      width: 100%;
+      margin-top: 16px;
+    }
+
+    #status {
+      padding: 12px;
+      background: #f0f3f8;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    #result {
+      font-size: 20px;
+      font-weight: bold;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>ISBNバーコード読み取りテスト</h1>
+
+  <p>
+    本の裏表紙にあるISBNバーコードをカメラで読み取ります。
+  </p>
+
+  <button id="startButton">カメラを起動</button>
+  <button id="stopButton" disabled>カメラを停止</button>
+
+  <div id="reader"></div>
+
+  <h2>読み取り結果</h2>
+  <div id="result">まだ読み取っていません。</div>
+
+  <h2>ステータス</h2>
+  <div id="status">ページを読み込んでいます……</div>
+
+  <script>
+    const statusElement = document.getElementById("status");
+    const resultElement = document.getElementById("result");
+    const startButton = document.getElementById("startButton");
+    const stopButton = document.getElementById("stopButton");
+
+    let scanner = null;
+    let isScanning = false;
+    let isCompleted = false;
+
+    function setStatus(message) {
+      statusElement.textContent = message;
+    }
+
+    function isValidISBN13(isbn) {
+      if (!/^(978|979)\d{10}$/.test(isbn)) {
+        return false;
+      }
+
+      let sum = 0;
+
+      for (let i = 0; i < 12; i++) {
+        sum += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
+      }
+
+      return (10 - sum % 10) % 10 === Number(isbn[12]);
+    }
+
+    async function startScanner() {
+      if (isScanning) return;
+
+      if (typeof Html5Qrcode === "undefined") {
+        setStatus(
+          "ライブラリを読み込めません。\n" +
+          "通信環境やCDNへのアクセスを確認してください。"
+        );
+        return;
+      }
+
+      scanner = new Html5Qrcode("reader", {
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13
+        ],
+        verbose: false
+      });
+
+      isCompleted = false;
+      startButton.disabled = true;
+      stopButton.disabled = false;
+
+      setStatus("カメラを起動しています……");
+
+      try {
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: {
+              width: 280,
+              height: 120
+            },
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.EAN_13
+            ]
+          },
+          async function (decodedText) {
+            if (isCompleted) return;
+
+            const isbn = String(decodedText).trim();
+
+            if (!isValidISBN13(isbn)) return;
+
+            isCompleted = true;
+
+            resultElement.textContent = isbn;
+
+            setStatus("ISBNを読み取りました！");
+            await stopScanner();
+          },
+          function () {
+            // 読み取り中のエラーは無視する
+          }
+        );
+
+        isScanning = true;
+
+        setStatus(
+          "カメラを起動しました。\n" +
+          "本のISBNバーコードを映してください。"
+        );
+
+      } catch (error) {
+        console.error(error);
+
+        scanner = null;
+        isScanning = false;
+
+        startButton.disabled = false;
+        stopButton.disabled = true;
+
+        setStatus(
+          "カメラを起動できませんでした。\n" +
+          String(error)
+        );
+      }
+    }
+
+    async function stopScanner() {
+      if (!scanner) return;
+
+      const currentScanner = scanner;
+
+      try {
+        if (isScanning || currentScanner.isScanning) {
+          await currentScanner.stop();
+        }
+      } catch (error) {
+        console.warn(error);
+      }
+
+      try {
+        currentScanner.clear();
+      } catch (error) {
+        console.warn(error);
+      }
+
+      scanner = null;
+      isScanning = false;
+
+      startButton.disabled = false;
+      stopButton.disabled = true;
+    }
+
+    startButton.addEventListener("click", startScanner);
+    stopButton.addEventListener("click", stopScanner);
+
+    if (typeof Html5Qrcode === "undefined") {
+      setStatus(
+        "ページは起動しましたが、ライブラリを読み込めません。\n" +
+        "CDNへの接続を確認してください。"
+      );
+    } else {
+      setStatus(
+        "準備完了。\n" +
+        "「カメラを起動」を押してください。"
+      );
+    }
+  </script>
+</body>
+</html>
