@@ -159,14 +159,6 @@
          inputmode="numeric"
          placeholder="例：1000">
 
-  <label for="taxIncluded">税込定価（円）</label>
-  <input id="taxIncluded"
-         type="number"
-         min="0"
-         step="1"
-         inputmode="numeric"
-         placeholder="例：1100">
-
   <label for="memo">メモ</label>
   <textarea id="memo"
             placeholder="感想、購入場所、分類など"></textarea>
@@ -209,7 +201,6 @@
     'author',
     'publisher',
     'price',
-    'taxIncluded',
     'memo'
   ];
 
@@ -369,11 +360,9 @@
     }
 
     const price = $('price').value.trim();
-    const taxIncluded = $('taxIncluded').value.trim();
 
     for (const [value, label] of [
-      [price, '本体定価'],
-      [taxIncluded, '税込定価']
+      [price, '本体定価']
     ]) {
       if (
         value !== '' &&
@@ -392,7 +381,6 @@
       author: $('author').value,
       publisher: $('publisher').value,
       price: price,
-      taxIncluded: taxIncluded,
       memo: $('memo').value
     };
 
